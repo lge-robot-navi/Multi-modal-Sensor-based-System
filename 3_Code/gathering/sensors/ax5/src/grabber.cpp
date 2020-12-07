@@ -40,7 +40,7 @@ std::atomic<bool> flag_running(true);
 
 int main(int argc, char** argv) try
 {
-	std::string deviceMacAddress = "00:11:1c:02:b7:40";
+	std::string deviceMacAddress = "00:11:1c:02:b7:41";
 
 	if(argv != nullptr) {
 		for(int i=1; i<argc; i++)
