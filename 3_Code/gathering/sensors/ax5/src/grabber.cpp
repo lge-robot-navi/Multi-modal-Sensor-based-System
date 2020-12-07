@@ -1,19 +1,3 @@
-/*
-* Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #include <iostream>
 #include <iomanip>
@@ -40,13 +24,14 @@ std::atomic<bool> flag_running(true);
 
 int main(int argc, char** argv) try
 {
-	std::string deviceMacAddress = "00:11:1c:02:b7:41";
+	std::string deviceMacAddress = "00:11:1c:02:ed:3c";
 
+	// check arguments
 	if(argv != nullptr) {
 		for(int i=1; i<argc; i++)
 		{
 			if(!std::strncmp(argv[i], "--help", 6)) {
-				cout << "Usage: " << argv[0] << "[--viewer true/*false] [--test true/*false] [--device 00:11:1c:02:b7:40]" << endl;
+				cout << "Usage: " << argv[0] << "[--viewer true/*false] [--test true/*false] [--device 00:11:1c:02:ed:3c]" << endl;
 				return 0;
 			}
 			else if(!std::strncmp(argv[i], "--viewer", 8)) {
@@ -68,6 +53,7 @@ int main(int argc, char** argv) try
 	signal(SIGKILL, [](int){ flag_running = false; });
 	signal(SIGTERM, [](int){ flag_running = false; });
 
+	// init. memsync interface
 	void* pHandle = nullptr;
 	int retCode = 0;
 
@@ -84,25 +70,28 @@ int main(int argc, char** argv) try
 	
 	uint32_t width = 0;
 	uint32_t height = 0;
-	uint8_t* pData = nullptr;
+	uint16_t* pRawData = nullptr;
 
 	// init. thermal camera using ebus sdk
-	GEVCamera camera(deviceMacAddress); 
+	GEVCamera camera(deviceMacAddress); //"00:11:1c:02:b7:40");
 	camera.connect();
 	if(flag_testonly == true) cout << "connected camera" << endl;
 
 	if(flag_viewer == true) {
-		cv::namedWindow("Thermal", CV_WINDOW_AUTOSIZE);
+		cv::namedWindow("Thermal_Grayscale", cv::WINDOW_AUTOSIZE);
 	}
 
+	// polling
 	while(flag_running == true)
 	{
-		camera.getRawData(width, height, pData);
-		if(width > 0 && height > 0 && pData != nullptr) {	
+		// get raw data
+		camera.getRawData(width, height, pRawData);
+		if(width > 0 && height > 0 && pRawData != nullptr) {	// valid,
 			if(flag_testonly == false) {
 				if(MemSync_ValidateHandle(pHandle) == true) {
+					MemSync_SetID(pHandle, "Thermal_Image");
 					timestamp = MemSync_CurrentTimestamp();
-					retCode = MemSync_Write(pHandle, (const char*)pData, (width * height), timestamp);
+					retCode = MemSync_Write(pHandle, (const char*)pRawData, (width * height * 2), timestamp);
 					if(retCode == MEMSYNC_MUTEX_LOCKED) {
 						throw "MemSync_Write failed - mutex locked";
 					}
@@ -113,10 +102,12 @@ int main(int argc, char** argv) try
 			}
 			
 			if(flag_viewer == true) {
-				cv::Mat1b img = cv::Mat1b(height, width, pData);
-				cv::imshow("Thermal", img);
-				img.release();
-				cvWaitKey(50);
+				cv::Mat1w img = cv::Mat1w(height, width, pRawData); 
+				cv::Mat1b img_grayscale = cv::Mat1b(height, width);
+				cv::normalize(img, img_grayscale, 0., 255., cv::NORM_MINMAX,CV_8U);
+				cv::imshow("Thermal_Grayscale", img_grayscale);
+				img.release(); img_grayscale.release();
+                cv::waitKey(50);
 				continue;
 			}
 		}
@@ -128,6 +119,7 @@ int main(int argc, char** argv) try
 	}
 
 	if(flag_testonly == true) cout << "disconnect camera and release memsync" << endl;
+
 	if(flag_viewer == true) cv::destroyAllWindows();
 
 	camera.disconnect();

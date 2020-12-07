@@ -153,9 +153,9 @@ void GEVCamera::acquireImages(PvDevice* aDevice, PvStream* aStream)
 
                 if(lType == PvPayloadTypeImage) {
                     PvImage *lImage = lBuffer->GetImage();
-                    imgWidth = (uint32_t)640;
-                    imgHeight = (uint32_t)480;
-		            imgPixelSize = (uint32_t)3;                     
+                    imgWidth = (uint32_t)640;//lImage->GetWidth();
+                    imgHeight = (uint32_t)480;//lImage->GetHeight();
+		    imgPixelSize = (uint32_t)3; //lImage->GetPixelSize(PvPixelBayerRG8);                    
 
                     uint32_t imgSize = imgHeight * imgWidth * imgPixelSize;
                     if(imgBufferPtr == nullptr) {
@@ -163,7 +163,7 @@ void GEVCamera::acquireImages(PvDevice* aDevice, PvStream* aStream)
                     }
 
                     memcpy(imgBufferPtr, lImage->GetDataPointer(), imgSize);
-		            imgReadyConditionVariable.notify_one();
+		    imgReadyConditionVariable.notify_one();
                 }
                 else {
                     cout << "(buffer does not contain image)" << endl;

@@ -1,19 +1,3 @@
-/*
-* Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #include <cstring>
 #include <iostream>
@@ -86,14 +70,16 @@ int main(int argc, char** argv) try
 					saving_rate = (int)std::stoi(argv[i]);
 				}
 			}
-        } 
+        } // for loop
     }
 
+    // set signal handler
     signal(SIGINT, [](int){ flag_running = false; });
     signal(SIGABRT, [](int){ flag_running = false; });
     signal(SIGKILL, [](int){ flag_running = false; });
     signal(SIGTERM, [](int){ flag_running = false; });
 
+    // creating openCV Matrix
     int w = 640, h = 480;
     std::shared_ptr<char> rgbgs_data(new char[w * h * 3]); 
     std::memset((void*)rgbgs_data.get(), 0, (std::size_t)(w * h * 3));
@@ -102,10 +88,12 @@ int main(int argc, char** argv) try
     if(flag_testonly == true) cout << "create color mat (size: " << rgbgs_bufsize << ")" << endl;
 
     if(flag_viewer == true) {
+        // show image
         namedWindow("RGBGS_Saver", WINDOW_AUTOSIZE);
         imshow("RGBGS_Saver", imgRGBGS);
     }
 
+    // init. memsync interface
     void* pHandle = nullptr;
     int retCode = 0;
 
@@ -118,12 +106,14 @@ int main(int argc, char** argv) try
         MemSync_SetID(pHandle, "RGBGS");
     }
 
+    // check output directories
     if(!fs::exists(root_path)) fs::create_directory(root_path);
     if(!fs::exists(root_path / "rgbgs")) fs::create_directory(root_path / "rgbgs");
 
     unsigned long timestamp = 0;
     unsigned long rgbgs_data_size = 0;
 
+    // wait starttime
     while(flag_running == true)
     {
         auto currenttime = std::chrono::system_clock::now();
@@ -148,6 +138,7 @@ int main(int argc, char** argv) try
         cout << "start saving loop" << endl;
     }
 
+    // polling
     time_t today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm today_tm = *localtime(&today_tt);
 
@@ -157,6 +148,7 @@ int main(int argc, char** argv) try
 
     while(flag_running == true)
     {
+        // save every 100msec (default: 10Hz)
         epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
         c_time_hook = (int)((epoch_ms.count() % 1000) / (1000 / saving_rate));
         if(c_time_hook != p_time_hook) {
@@ -171,7 +163,7 @@ int main(int argc, char** argv) try
                 }
 
                 std::memcpy((void*)imgRGBGS.data, (const void*)rgbgs_data.get(), (std::size_t)rgbgs_data_size);
-		        cv::cvtColor(imgRGBGS, imgRGBGS, cv::COLOR_RGB2BGR);
+		cv::cvtColor(imgRGBGS, imgRGBGS, cv::COLOR_RGB2BGR);
 
                 today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 today_tm = *localtime(&today_tt);
@@ -195,7 +187,7 @@ int main(int argc, char** argv) try
         else {
             usleep(33333);
         }
-    }
+    } // end of while
 
     if(flag_testonly == true) cout << "release memory..." << endl;
     imgRGBGS.release();

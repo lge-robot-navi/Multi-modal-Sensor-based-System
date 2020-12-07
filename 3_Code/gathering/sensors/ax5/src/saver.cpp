@@ -1,22 +1,7 @@
-/*
-* Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <opencv2/opencv.hpp>
 #include <csignal>
 #include <memory>
@@ -47,12 +32,14 @@ int main(int argc, char** argv) try
 {
     auto starttime = std::chrono::system_clock::now();
     root_path = "/work/data";
-	char* prefix_filename = "FX01"; 
+	const char* prefix_filename = "FX01"; 
+    bool output_type_png = true, output_type_raw = false, output_type_both = false;
 
+    // check arguments
     if(argv != nullptr) {
         for(int i=1; i<argc; i++) {
             if(!std::strncmp(argv[i], "--help", 6)) {
-                cout << "Usage: " << argv[0] << " [--viewer true/*false] [--test true/*false] [--starttime <HHMMSS>] [--output <root_path>] [--prefix <prefix_filename>] [--rate <saving_rate(Hz)>]" << endl;
+                cout << "Usage: " << argv[0] << " [--viewer true/*false] [--test true/*false] [--starttime <HHMMSS>] [--output <root_path>] [--prefix <prefix_filename>] [--rate <saving_rate(Hz)>] [--type <PNG*/RAW/BOTH>]" << endl;
                 return 0;
             }
             else if(!std::strncmp(argv[i], "--viewer", 8)) {
@@ -85,26 +72,40 @@ int main(int argc, char** argv) try
 					saving_rate = (int)std::stoi(argv[i]);
 				}
 			}
-        } 
+            else if(!std::strncmp(argv[i], "--type", 6)) {
+                if(i+1 < argc && argv[++i] != nullptr) {
+                    if(!std::strncmp(argv[i], "raw", 3) || !std::strncmp(argv[i], "RAW", 3)) {
+                        output_type_both = false; output_type_png = false; output_type_raw = true;
+                    }
+                    else if(!std::strncmp(argv[i], "both", 4) || !std::strncmp(argv[i], "BOTH", 4)) {
+                        output_type_both = true; output_type_png = true; output_type_raw = true;
+                    }
+                }
+            }
+        } // for loop
     }
 
+    // set signal handler
     signal(SIGINT, [](int){ flag_running = false; });
     signal(SIGABRT, [](int){ flag_running = false; });
     signal(SIGKILL, [](int){ flag_running = false; });
     signal(SIGTERM, [](int){ flag_running = false; });
 
+    // creating openCV Matrix
     int w = 640, h = 512;
-    std::shared_ptr<char> thermal_data(new char[w * h * 1]); 
-    std::memset((void*)thermal_data.get(), 0, (std::size_t)(w * h * 1));
-    Mat imgThermal(Size(w, h), CV_8UC1, (void*)thermal_data.get(), Mat::AUTO_STEP);
+    std::shared_ptr<char> thermal_data(new char[w * h * 2]); 
+    std::memset((void*)thermal_data.get(), 0, (std::size_t)(w * h * 2));
+    Mat imgThermal(Size(w, h), CV_16UC1, (void*)thermal_data.get(), Mat::AUTO_STEP);
     std::size_t thermal_bufsize = imgThermal.total() * imgThermal.elemSize();
     if(flag_testonly == true) cout << "create color mat (size: " << thermal_bufsize << ")" << endl;
 
     if(flag_viewer == true) {
+        // show image
         namedWindow("Thermal_Saver", WINDOW_AUTOSIZE);
         imshow("Thermal_Saver", imgThermal);
     }
 
+    // init. memsync interface
     void* pHandle = nullptr;
     int retCode = 0;
 
@@ -117,12 +118,18 @@ int main(int argc, char** argv) try
         MemSync_SetID(pHandle, "Thermal_Image");
     }
 
+    // check output directories
 	if(!fs::exists(root_path)) fs::create_directory(root_path);
     if(!fs::exists(root_path / "thermal")) fs::create_directory(root_path / "thermal");
 
     unsigned long timestamp = 0;
     unsigned long thermal_data_size = 0;
 
+    vector<int> compresstion_params;
+    compresstion_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+    compresstion_params.push_back(0);
+
+    // wait starttime
     while(flag_running == true)
     {
         auto currenttime = std::chrono::system_clock::now();
@@ -147,6 +154,7 @@ int main(int argc, char** argv) try
         cout << "start saving loop" << endl;
     }
 
+    // polling
     time_t today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm today_tm = *localtime(&today_tt);
 
@@ -156,6 +164,7 @@ int main(int argc, char** argv) try
 
     while(flag_running == true)
     {
+        // save every 100msec (default: 10Hz)
         epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
         c_time_hook = (int)((epoch_ms.count() % 1000) / (1000 / saving_rate));
         if(c_time_hook != p_time_hook) {
@@ -174,14 +183,29 @@ int main(int argc, char** argv) try
                 today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 today_tm = *localtime(&today_tt);
                 
-                memset(output_filename, 0, OUTPATHFILE_LENGTH);
-                snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_THERMAL_%02d%02d%02d_%02d%02d%02d_%02d.png",
-                            (root_path / "thermal").c_str(),
-							prefix_filename,
-                            (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
-                            today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
-                            c_time_hook);
-                imwrite(output_filename, imgThermal);
+                if(output_type_png == true || output_type_both == true) {
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_THERMAL_%02d%02d%02d_%02d%02d%02d_%02d.png",
+                                (root_path / "thermal").c_str(),
+						    	prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    imwrite(output_filename, imgThermal, compresstion_params);
+                }
+                else if(output_type_raw == true || output_type_both == true) {
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_THERMAL_%02d%02d%02d_%02d%02d%02d_%02d.raw",
+                                (root_path / "thermal").c_str(),
+                                prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    ofstream out_file(output_filename, ios::out | ios::binary);
+                    out_file.write((const char*)thermal_data.get(), (int)thermal_data_size);
+                    out_file.close();
+                }
+                
             }
 
             if(flag_viewer == true) {
@@ -193,7 +217,7 @@ int main(int argc, char** argv) try
         else {
             usleep(33333);
         }
-    } 
+    } // end of while
 
     if(flag_testonly == true) cout << "release memory..." << endl;
     imgThermal.release();

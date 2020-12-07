@@ -18,8 +18,9 @@ GEVCamera::GEVCamera(std::string macAddress)
     , deviceInfo()
     , imgWidth()
     , imgHeight()
-    , imgBufferPtr(nullptr)
-    , threadPtr()
+	, imgPixelSize()
+    , imgBufferRawPtr(nullptr)
+	, threadPtr()
     , imgReadyConditionVariable()
     , imgReadyMutex()
 {
@@ -28,7 +29,7 @@ GEVCamera::GEVCamera(std::string macAddress)
 
 GEVCamera::~GEVCamera(void)
 {
-    if(imgBufferPtr != nullptr) free(imgBufferPtr); imgBufferPtr = nullptr;
+	if(imgBufferRawPtr != nullptr) free(imgBufferRawPtr); imgBufferRawPtr = nullptr;
 }
 
 void GEVCamera::connect()
@@ -94,28 +95,37 @@ void GEVCamera::createStreamBuffers(PvDevice* aDevice, PvStream *aStream, Buffer
     }
 }
 
-cv::Mat1b GEVCamera::getImage()
+cv::Mat1w GEVCamera::getImage()
 {
     std::unique_lock<std::mutex> lock(this->imgReadyMutex);
     imgReadyConditionVariable.wait(lock);
-    return cv::Mat1b(imgHeight, imgWidth, imgBufferPtr);
+    //return cv::Mat1b(imgHeight, imgWidth, imgBufferPtr);
+	return cv::Mat1w(imgHeight, imgWidth, (ushort*)imgBufferRawPtr);
 }
 
-void GEVCamera::getRawData(uint32_t& width, uint32_t& height, uint8_t*& bufferPtr)
+void GEVCamera::getRawData(uint32_t& width, uint32_t& height, uint16_t*& bufferPtr)
 {
     std::unique_lock<std::mutex> lock(this->imgReadyMutex);
     imgReadyConditionVariable.wait(lock);
 
     width = imgWidth;
     height = imgHeight;
-    bufferPtr = imgBufferPtr;
+    bufferPtr = imgBufferRawPtr;	// imgBufferPtr
 }
 
 void GEVCamera::acquireImages(PvDevice* aDevice, PvStream* aStream)
 {
     PvGenParameterArray *lDeviceParams = aDevice->GetParameters();
     PvGenCommand *lStart = dynamic_cast<PvGenCommand*>(lDeviceParams->Get("AcquisitionStart"));
-    
+   
+	lDeviceParams->SetEnumValue("PixelFormat", PvPixelMono14);
+	
+	int64_t lWidth = 0, lHeight = 0, lBits = 0;
+	lDeviceParams->GetIntegerValue("Width", lWidth);
+	lDeviceParams->GetIntegerValue("Height", lHeight);
+	lDeviceParams->GetEnumValue("DigitalOutput", lBits);
+	printf(">>> width : %ld, height : %ld, digital_output : %ld\n", lWidth, lHeight, lBits);
+ 
     PvGenParameterArray *lStreamParams = aStream->GetParameters();
     PvGenFloat *lFrameRate = dynamic_cast<PvGenFloat*>(lStreamParams->Get("AcquisitionRate"));
     PvGenFloat *lBandwidth = dynamic_cast<PvGenFloat*>(lStreamParams->Get("Bandwidth"));
@@ -146,14 +156,15 @@ void GEVCamera::acquireImages(PvDevice* aDevice, PvStream* aStream)
                     PvImage *lImage = lBuffer->GetImage();
                     imgWidth = lImage->GetWidth();
                     imgHeight = lImage->GetHeight();
-                    
-                    uint32_t imgSize = imgHeight * imgWidth;
-                    if(imgBufferPtr == nullptr) {
-                        imgBufferPtr = (uint8_t*)malloc(imgSize);
+					imgPixelSize = lImage->GetPixelSize(PvPixelMono14);                    
+
+                    uint32_t imgSize = imgHeight * imgWidth * 2;
+                    if(imgBufferRawPtr == nullptr) {
+                        imgBufferRawPtr = (uint16_t*)malloc(imgSize); //(uint8_t*)malloc(imgSize);
                     }
 
-                    memcpy(imgBufferPtr, lImage->GetDataPointer(), imgSize);
-                    imgReadyConditionVariable.notify_one();
+                    memcpy(imgBufferRawPtr, lImage->GetDataPointer(), imgSize);
+					imgReadyConditionVariable.notify_one();
                 }
                 else {
                     cout << "(buffer does not contain image)" << endl;
@@ -196,7 +207,7 @@ void GEVCamera::disconnect()
 
     threadPtr.reset();
 
-    if(imgBufferPtr != nullptr) free(imgBufferPtr); imgBufferPtr = nullptr;
+	if(imgBufferRawPtr != nullptr) free(imgBufferRawPtr); imgBufferRawPtr = nullptr;
 }
 
 

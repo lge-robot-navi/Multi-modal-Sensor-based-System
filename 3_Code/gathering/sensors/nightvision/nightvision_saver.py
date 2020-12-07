@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: <utf-8> -*-
 
-# Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-
 import os 
 import argparse
 import signal 
@@ -27,8 +11,14 @@ import os
 import numpy as np 
 
 import sys
+#sys.path.append(os.path.join("..", "..", "memsync", "python"))
 
+#sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 exclude_path = '/opt/ros/kinetic/lib/python2.7/dist-packages'
+#if os.environ.get('PYTHONPATH') is not None:
+#	if exclude_path in os.environ['PYTHONPATH'].split(os.pathsep):
+#		sys.path.remove(exclude_path)
+
 if exclude_path in sys.path:
     sys.path.remove(exclude_path)
 
@@ -112,7 +102,7 @@ def main():
                     nv_frame = np.frombuffer(data, dtype=np.uint8, count=img_height*img_width*img_channel)
                     nv_frame = np.reshape(nv_frame, (img_height, img_width, img_channel))
 
-                    output_filename = FLAGS.prefix + '_NV' + FLAGS.camera_num + '_' + '{:%Y%m%d_%H%M%S}'.format(datetime.now()) + '_{:02d}'.format(int(c_time_hook)) + '.png'
+                    output_filename = FLAGS.prefix + '_NV' + FLAGS.camera_num + '_' + '{:%y%m%d_%H%M%S}'.format(datetime.now()) + '_{:02d}'.format(int(c_time_hook)) + '.png'
                     cv2.imwrite(os.path.join(output_filepath, output_filename), nv_frame)  
  
                     if FLAGS is not None and FLAGS.viewer is True:

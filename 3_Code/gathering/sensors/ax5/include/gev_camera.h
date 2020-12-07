@@ -40,8 +40,8 @@ class GEVCamera
         void configureStream(PvDevice* aDevice, PvStream* aStream);
         void createStreamBuffers(PvDevice* aDevice, PvStream* aStream, BufferList* aBufferList);
         void acquireImages(PvDevice* aDevice, PvStream* aStream);
-        cv::Mat1b getImage();
-        void getRawData(uint32_t& width, uint32_t& height, uint8_t*& bufferPtr);
+        cv::Mat1w getImage();
+        void getRawData(uint32_t& width, uint32_t& height, uint16_t*& bufferPtr);
 
         std::atomic<bool> running;
 
@@ -56,8 +56,10 @@ class GEVCamera
 
         uint32_t imgWidth;
         uint32_t imgHeight;
+		uint32_t imgPixelSize;
 
-        uint8_t* imgBufferPtr;
+        //uint8_t* imgBufferPtr;
+		uint16_t* imgBufferRawPtr;
 
         const PvDeviceInfo* deviceInfo;
 

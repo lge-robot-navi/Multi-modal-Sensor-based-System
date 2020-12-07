@@ -1,19 +1,3 @@
-/*
-* Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #include <cstring>
 #include <iostream>
@@ -22,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <iomanip>
+#include <vector>
 #include <experimental/filesystem>
 
 #include <assert.h>
@@ -59,11 +44,13 @@ int main(int argc, char** argv) try
     auto starttime = std::chrono::system_clock::now();
     root_path = "/work/data";
 	char* prefix_filename = "FX01";
+    bool output_type_png = true, output_type_raw = false, output_type_both = false;
 
+    // check arguments
     if(argv != nullptr) {
         for(int i=1; i<argc; i++) {
             if(!std::strncmp(argv[i], "--help", 6)) {
-                cout << "Usage: " << argv[0] << " [--viewer true/*false] [--test true/*false] [--starttime <HHMMSS>] [--output <root_path>] [--prefix <prefix_filename>] [--rate <saving_rate(Hz)>]" << endl;
+                cout << "Usage: " << argv[0] << " [--viewer true/*false] [--test true/*false] [--starttime <HHMMSS>] [--output <root_path>] [--prefix <prefix_filename>] [--rate <saving_rate(Hz)>] [--type <PNG*/RAW/BOTH>]" << endl;
                 return 0;
             }
             else if(!std::strncmp(argv[i], "--viewer", 8)) {
@@ -96,14 +83,26 @@ int main(int argc, char** argv) try
 					saving_rate = (int)std::stoi(argv[i]);
 				}
 			}
-        } 
+            else if(!std::strncmp(argv[i], "--type", 6)) {
+                if(i+1 < argc && argv[++i] != nullptr) {
+                    if(!std::strncmp(argv[i], "raw", 3) || !std::strncmp(argv[i], "RAW", 3)) {
+                        output_type_both = false; output_type_png = false; output_type_raw = true;
+                    }
+                    else if(!std::strncmp(argv[i], "both", 4) || !std::strncmp(argv[i], "BOTH", 4)) {
+                        output_type_both = true; output_type_png = true; output_type_raw = true;
+                    }
+                }
+            }
+        } // for loop
     }
 
+    // set signal handler
     signal(SIGINT, [](int){ flag_running = false; });
     signal(SIGABRT, [](int){ flag_running = false; });
     signal(SIGKILL, [](int){ flag_running = false; });
     signal(SIGTERM, [](int){ flag_running = false; });
 
+    // creating openCV Matrix
     int w = 640, h = 480;
     std::shared_ptr<char> color_data(new char[w * h * 3]); 
     std::memset((void*)color_data.get(), 0, (std::size_t)(w * h * 3));
@@ -123,11 +122,19 @@ int main(int argc, char** argv) try
 	std::size_t ir_bufsize = imgIR.total() * imgIR.elemSize();
 	if(flag_testonly == true) cout << "create ir mat (size: " << ir_bufsize << ")" << endl; 
 
+    std::shared_ptr<char> aligned_depth_data(new char[w * h * 2]);
+    std::memset((void*)aligned_depth_data.get(), 0, (std::size_t)(w * h * 2));
+    Mat imgAlignedDepth(Size(w, h), CV_16UC1, (void*)aligned_depth_data.get(), Mat::AUTO_STEP);
+    std::size_t aligned_depth_bufsize = imgAlignedDepth.total() * imgAlignedDepth.elemSize();
+    if(flag_testonly == true) cout << "create aligned_depth mat(size: " << aligned_depth_bufsize << ")" << endl;
+
     if(flag_viewer == true) {
+        // show image
         namedWindow("Color_Saver", WINDOW_AUTOSIZE);
         imshow("Color_Saver", imgColor);
     }
 
+    // init. memsync interface
     void* pHandle = nullptr;
     int retCode = 0;
 
@@ -140,13 +147,16 @@ int main(int argc, char** argv) try
         MemSync_SetServerInfo(pHandle, "localhost", 11211);
     }
 
+    // check output directories
     if(!fs::exists(root_path)) fs::create_directory(root_path);
     if(!fs::exists(root_path / "rgbdepth")) fs::create_directory(root_path / "rgbdepth");
     if(!fs::exists(root_path / "rgbdepth" / "color")) fs::create_directory(root_path / "rgbdepth" / "color");
     if(!fs::exists(root_path / "rgbdepth" / "depth")) fs::create_directory(root_path / "rgbdepth" / "depth");
-	if(!fs::exists(root_path / "rgbdepth" / "ir")) fs::create_directory(root_path / "rgbdepth" / "ir");
+	if(!fs::exists(root_path / "rgbdepth" / "aligned_depth")) fs::create_directory(root_path / "rgbdepth" / "aligned_depth");
+    if(!fs::exists(root_path / "rgbdepth" / "ir")) fs::create_directory(root_path / "rgbdepth" / "ir");
 	if(!fs::exists(root_path / "rgbdepth" / "imu")) fs::create_directory(root_path / "rgbdepth" / "imu");
 
+	// get imu csv file handle
 	struct IMUData imu_data;
 	unsigned long imu_data_size = 0;
 
@@ -165,7 +175,13 @@ int main(int argc, char** argv) try
     unsigned long color_data_size = 0;
     unsigned long depth_data_size = 0;
 	unsigned long ir_data_size = 0;
+    unsigned long aligned_depth_data_size = 0;
 
+    vector<int> compresstion_params;
+    compresstion_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+    compresstion_params.push_back(0);
+
+    // wait starttime
     while(flag_running == true)
     {
         auto currenttime = std::chrono::system_clock::now();
@@ -190,15 +206,19 @@ int main(int argc, char** argv) try
         cout << "start saving loop" << endl;
     }
 
+    // polling
     today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     today_tm = *localtime(&today_tt);
 
+    //auto epoch = std::chrono::system_clock::now().time_since_epoch();
+    //auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
     auto epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
     int p_time_hook = (int)((epoch_ms.count() % 1000) / (1000 / saving_rate));
     int c_time_hook = 0;
 
     while(flag_running == true)
     {
+        // save every 100msec (10Hz)
         epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
         c_time_hook = (int)((epoch_ms.count() % 1000) / (1000 / saving_rate));
         if(c_time_hook != p_time_hook) {
@@ -222,6 +242,12 @@ int main(int argc, char** argv) try
 		    			std::cerr << "MemSync_Read failed - mutex locked" << std::endl;
 		    		}
 
+                    MemSync_SetID(pHandle, "RealSense_AlignedDepth");
+                    retCode = MemSync_Read(pHandle, aligned_depth_data.get(), aligned_depth_data_size, timestamp);
+                    if(retCode == MEMSYNC_MUTEX_LOCKED) {
+                        std::cerr << "MemSync_Read failed - mutex locked" << std::endl;
+                    }
+
 					MemSync_SetID(pHandle, "RealSense_IMU");
 					retCode = MemSync_Read(pHandle, (char*)&imu_data, imu_data_size, timestamp);
 					if(retCode == MEMSYNC_MUTEX_LOCKED) {
@@ -232,6 +258,7 @@ int main(int argc, char** argv) try
                 std::memcpy((void*)imgColor.data, (const void*)color_data.get(), (std::size_t)color_data_size);
                 std::memcpy((void*)imgDepth.data, (const void*)depth_data.get(), (std::size_t)depth_data_size);
 				std::memcpy((void*)imgIR.data, (const void*)ir_data.get(), (std::size_t)ir_data_size);
+                std::memcpy((void*)imgAlignedDepth.data, (const void*)aligned_depth_data.get(), (std::size_t)aligned_depth_data_size);
 
                 today_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 today_tm = *localtime(&today_tt);
@@ -243,16 +270,7 @@ int main(int argc, char** argv) try
                             (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
                             today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
                             c_time_hook);
-                imwrite(output_filename, imgColor);
-
-                memset(output_filename, 0, OUTPATHFILE_LENGTH);
-                snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_DEPTH_%02d%02d%02d_%02d%02d%02d_%02d.png",
-                            (root_path / "rgbdepth" / "depth").c_str(),
-							prefix_filename,
-                            (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
-                            today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
-                            c_time_hook);
-                imwrite(output_filename, imgDepth);
+                imwrite(output_filename, imgColor, compresstion_params);
 
 				memset(output_filename, 0, OUTPATHFILE_LENGTH);
 				snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_IR_%02d%02d%02d_%02d%02d%02d_%02d.png",
@@ -261,7 +279,50 @@ int main(int argc, char** argv) try
 							(today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
 							today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
 							c_time_hook);
-				imwrite(output_filename, imgIR);
+				imwrite(output_filename, imgIR, compresstion_params);
+
+                if(output_type_png == true || output_type_both == true) {
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_DEPTH_%02d%02d%02d_%02d%02d%02d_%02d.png",
+                                (root_path / "rgbdepth" / "depth").c_str(),
+                                prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    imwrite(output_filename, imgDepth, compresstion_params);
+
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_ALIGNEDDEPTH_%02d%02d%02d_%02d%02d%02d_%02d.png",
+                                (root_path / "rgbdepth" / "aligned_depth").c_str(),
+                                prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    imwrite(output_filename, imgAlignedDepth, compresstion_params);
+                }
+                else if(output_type_raw == true || output_type_both == true) {
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_DEPTH_%02d%02d%02d_%02d%02d%02d_%02d.raw",
+                                (root_path / "rgbdepth" / "depth").c_str(),
+                                prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    ofstream out_file(output_filename, ios::out | ios::binary);
+                    out_file.write((const char*)depth_data.get(), (int)depth_data_size);
+                    out_file.close();
+
+                    memset(output_filename, 0, OUTPATHFILE_LENGTH);
+                    snprintf(output_filename, OUTPATHFILE_LENGTH, "%s/%s_ALIGNEDDEPTH_%02d%02d%02d_%02d%02d%02d_%02d.raw",
+                                (root_path / "rgbdepth" / "aligned_depth").c_str(),
+                                prefix_filename,
+                                (today_tm.tm_year % 100), (today_tm.tm_mon+1), today_tm.tm_mday,
+                                today_tm.tm_hour, today_tm.tm_min, today_tm.tm_sec,
+                                c_time_hook);
+                    ofstream out_file2(output_filename, ios::out | ios::binary);
+                    out_file2.write((const char*)aligned_depth_data.get(), (int)aligned_depth_data_size);
+                    out_file2.close();
+                }
 
 				output_csv << timestamp << ",";
 				output_csv << imu_data.accel_x << "," << imu_data.accel_y << "," << imu_data.accel_z << ",";
@@ -271,7 +332,7 @@ int main(int argc, char** argv) try
 
             if(flag_viewer == true) {
 				imshow("Color_Saver", imgColor);
-				cvWaitKey(50);
+				cv::waitKey(50);
             }
 
             p_time_hook = c_time_hook;
@@ -287,12 +348,14 @@ int main(int argc, char** argv) try
     imgColor.release();
     imgDepth.release();
 	imgIR.release();
+    imgAlignedDepth.release();
 
 	if(flag_viewer == true) destroyAllWindows();
 
     color_data.reset();
     depth_data.reset();
 	ir_data.reset();
+    aligned_depth_data.reset();
 
     if(pHandle != nullptr) MemSync_ReleaseHandle(pHandle); pHandle = nullptr;
 

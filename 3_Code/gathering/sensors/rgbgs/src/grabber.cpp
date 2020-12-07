@@ -1,19 +1,3 @@
-/*
-* Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*    You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #include <iostream>
 #include <iomanip>
@@ -42,6 +26,7 @@ int main(int argc, char** argv) try
 {
 	std::string deviceMacAddress = "9c:14:63:6d:70:d3";
 
+	// check arguments
 	if(argv != nullptr) {
 		for(int i=1; i<argc; i++)
 		{
@@ -62,11 +47,13 @@ int main(int argc, char** argv) try
 		}
 	}
 
+	// set signal handler
 	signal(SIGINT, [](int){ flag_running = false; });
 	signal(SIGABRT, [](int){ flag_running = false; });
 	signal(SIGKILL, [](int){ flag_running = false; });
 	signal(SIGTERM, [](int){ flag_running = false; });
 
+	// init. memsync interface
 	void* pHandle = nullptr;
 	int retCode = 0;
 
@@ -93,10 +80,12 @@ int main(int argc, char** argv) try
 		cv::namedWindow("RGBGS", cv::WINDOW_AUTOSIZE);
 	}
 
+	// polling
 	while(flag_running == true)
 	{
+		// get raw data
 		camera.getRawData(width, height, pRawData);
-		if(width > 0 && height > 0 && pRawData != nullptr) {
+		if(width > 0 && height > 0 && pRawData != nullptr) {	// valid,
 			if(flag_testonly == false) {
 				if(MemSync_ValidateHandle(pHandle) == true) {
 					timestamp = MemSync_CurrentTimestamp();
@@ -111,9 +100,10 @@ int main(int argc, char** argv) try
 			}
 			
 			if(flag_viewer == true) {
-                cv::Mat img(cv::Size(640, 480), CV_8UC3, (void*)pRawData, cv::Mat::AUTO_STEP);
-                cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
-                cv::imshow("RGBGS", img);
+				//cv::Mat3b img = cv::Mat1w(height, width, pRawData); i
+                                cv::Mat img(cv::Size(640, 480), CV_8UC3, (void*)pRawData, cv::Mat::AUTO_STEP);
+                                cv::cvtColor(img, img, cv::COLOR_RGB2BGR);
+                                cv::imshow("RGBGS", img);
 				img.release();
 				cv::waitKey(50);
 				continue;

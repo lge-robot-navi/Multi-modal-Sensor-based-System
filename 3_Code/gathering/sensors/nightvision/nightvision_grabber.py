@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
 
-
-# Copyright (C) 2019  <Jungwoo Lee, KIRO, Republic of Korea>
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-
 import os
 import argparse 
 import time 
@@ -25,10 +8,17 @@ import signal
 import numpy as np 
 
 import sys
+#sys.path.insert(0, "../../memsync/python/")
 
+#sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 exclude_path = '/opt/ros/kinetic/lib/python2.7/dist-packages'
+#if os.environ.get('PYTHONPATH') is not None:
+#	if exclude_path in os.environ['PYTHONPATH'].split(os.pathsep):
+#		sys.path.remove(exclude_path)
+
 if exclude_path in sys.path:
     sys.path.remove(exclude_path)
+
 
 import cv2
 
